@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-twitter-server"
+version = "0.2.0"
+description = "Model Context Protocol server for Twitter/X powered by xkit-py"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    { name = "inorilzy" }
+]
+dependencies = [
+    "fastmcp",
+    "xkit-py @ git+https://github.com/inorilzy/xkit-py.git",
+    "requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/inorilzy/mcp-twitter-server"
+Source = "https://github.com/inorilzy/mcp-twitter-server"
+Issues = "https://github.com/inorilzy/mcp-twitter-server/issues"
+
+[project.scripts]
+mcp-twitter-server = "mcp_twitter_server.twitter:mcp.run"
+
+[tool.hatch.metadata]
+allow-direct-references = true
