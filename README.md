@@ -33,7 +33,8 @@ Optional:
 
 ```json
 {
-  "USER_AGENT": "Mozilla/5.0 ..."
+  "USER_AGENT": "Mozilla/5.0 ...",
+  "XQUIK_API_KEY": "optional, routes search_twitter through Xquik"
 }
 ```
 
@@ -44,7 +45,7 @@ successful login.
 
 ### Read
 
-- `search_twitter` - search posts by query, sorted by Top or Latest
+- `search_twitter` - search posts by query, sorted by Top or Latest. Uses Xquik when `XQUIK_API_KEY` is configured
 - `get_user_tweets` - fetch posts from a user timeline
 - `get_user_mentions` - find posts mentioning a user
 - `get_timeline` - read the For You timeline

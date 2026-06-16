@@ -1,9 +1,10 @@
 from fastmcp import FastMCP, Context
 import xkit
 import os
+import requests
 from pathlib import Path
 import logging
-from typing import Optional, List
+from typing import Any, Optional, List
 import time
 
 mcp = FastMCP("mcp-twitter-server")
@@ -15,6 +16,8 @@ USERNAME = os.getenv('TWITTER_USERNAME')
 EMAIL = os.getenv('TWITTER_EMAIL')
 PASSWORD = os.getenv('TWITTER_PASSWORD')
 USER_AGENT = os.getenv('USER_AGENT')
+XQUIK_API_KEY = os.getenv('XQUIK_API_KEY')
+XQUIK_SEARCH_URL = 'https://xquik.com/api/v1/x/tweets/search'
 COOKIES_PATH = Path.home() / '.mcp-twitter-server' / 'cookies.json'
 LIST_REMOVE_MEMBER_URL = (
     'https://x.com/i/api/graphql/cvDFkG5WjcXV0Qw5nfe1qQ/ListRemoveMember'
@@ -66,6 +69,8 @@ def check_rate_limit(endpoint: str) -> bool:
 async def search_twitter(query: str, sort_by: str = 'Top', count: int = 10, ctx: Context = None) -> str:
     """Search twitter with a query. Sort by 'Top' or 'Latest'"""
     try:
+        if XQUIK_API_KEY:
+            return search_twitter_with_xquik(query, sort_by, count)
         client = await get_twitter_client()
         tweets = await client.search_tweet(query, product=sort_by, count=count)
         return convert_tweets_to_markdown(tweets)
@@ -278,7 +283,7 @@ def convert_users_to_markdown(users, header: Optional[str] = None) -> str:
     for u in users:
         verified = " ✅" if getattr(u, 'verified', False) or getattr(u, 'is_blue_verified', False) else ""
         protected = " 🔒" if getattr(u, 'protected', False) else ""
-        result.append(f"### @{u.screen_name} — {u.name}{verified}{protected}")
+        result.append(f"### @{u.screen_name} - {u.name}{verified}{protected}")
         result.append(f"**ID:** `{u.id}`  |  👥 {getattr(u, 'followers_count', 0)} followers  |  📤 {getattr(u, 'following_count', 0)} following  |  📝 {getattr(u, 'statuses_count', 0)} tweets")
         desc = getattr(u, 'description', None)
         if desc:
@@ -332,6 +337,130 @@ def convert_tweets_to_markdown(tweets) -> str:
                     result.append(f"![media]({murl})")
         result.append("---")
     return "\n".join(result)
+
+
+def _first_present(*values):
+    """Return the first value that is not empty."""
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _to_int(value) -> int:
+    """Coerce API count fields to integers."""
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return 0
+
+
+def _extract_xquik_tweets(payload: Any):
+    """Extract tweet arrays from common response envelopes."""
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ('tweets', 'items', 'results'):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+
+    data = payload.get('data')
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return _extract_xquik_tweets(data)
+    return []
+
+
+def _xquik_author(tweet):
+    """Return a normalized author dictionary."""
+    author = tweet.get('author') or tweet.get('user') or {}
+    if isinstance(author, dict):
+        return author
+    return {}
+
+
+def _format_xquik_tweets(tweets) -> str:
+    """Convert Xquik search results to the server markdown format."""
+    result = []
+    for tweet in tweets:
+        if not isinstance(tweet, dict):
+            continue
+
+        author = _xquik_author(tweet)
+        username = _first_present(
+            author.get('username'),
+            author.get('screenName'),
+            author.get('screen_name'),
+            author.get('handle'),
+            'unknown',
+        )
+        username = str(username).lstrip('@')
+        name = _first_present(author.get('name'), author.get('displayName'), username)
+        tweet_id = _first_present(tweet.get('id'), tweet.get('id_str'), '')
+        created_at = _first_present(tweet.get('createdAt'), tweet.get('created_at'), '')
+        text = _first_present(tweet.get('text'), tweet.get('fullText'), tweet.get('full_text'), '')
+
+        result.append(f"### @{username} ({name})")
+        if tweet_id or created_at:
+            result.append(f"**ID:** `{tweet_id}`  |  **Time:** {created_at}")
+        result.append("")
+        result.append(str(text))
+        result.append("")
+
+        stats = []
+        view_count = _to_int(_first_present(tweet.get('viewCount'), tweet.get('view_count'), tweet.get('views')))
+        if view_count:
+            stats.append(f"👁 {view_count}")
+        stats.append(f"❤️ {_to_int(_first_present(tweet.get('likeCount'), tweet.get('favoriteCount'), tweet.get('favorite_count')))}")
+        stats.append(f"🔁 {_to_int(_first_present(tweet.get('retweetCount'), tweet.get('retweet_count')))}")
+        stats.append(f"💬 {_to_int(_first_present(tweet.get('replyCount'), tweet.get('reply_count')))}")
+        stats.append(f"📌 {_to_int(_first_present(tweet.get('quoteCount'), tweet.get('quote_count')))}")
+        bookmark_count = _to_int(_first_present(tweet.get('bookmarkCount'), tweet.get('bookmark_count')))
+        if bookmark_count:
+            stats.append(f"🔖 {bookmark_count}")
+        result.append("  ".join(stats))
+
+        urls = _first_present(tweet.get('urls'), tweet.get('links'))
+        if isinstance(urls, list):
+            url_strs = []
+            for url in urls:
+                if isinstance(url, dict):
+                    url_strs.append(str(_first_present(url.get('expanded_url'), url.get('expandedUrl'), url.get('url'), '')))
+                else:
+                    url_strs.append(str(url))
+            url_strs = [url for url in url_strs if url]
+            if url_strs:
+                result.append("**Links:** " + " | ".join(url_strs))
+
+        media_items = tweet.get('media')
+        if isinstance(media_items, list):
+            for media in media_items:
+                if isinstance(media, dict):
+                    media_url = _first_present(media.get('media_url_https'), media.get('media_url'), media.get('url'))
+                    if media_url:
+                        result.append(f"![media]({media_url})")
+
+        result.append("---")
+    return "\n".join(result) if result else "(no tweets)"
+
+
+def search_twitter_with_xquik(query: str, sort_by: str, count: int) -> str:
+    """Search tweets through Xquik when XQUIK_API_KEY is configured."""
+    limit = count if isinstance(count, int) and count > 0 else 10
+    response = requests.get(
+        XQUIK_SEARCH_URL,
+        headers={'x-api-key': XQUIK_API_KEY},
+        params={'q': query, 'queryType': sort_by, 'limit': limit},
+        timeout=30,
+    )
+    response.raise_for_status()
+    tweets = _extract_xquik_tweets(response.json())
+    return _format_xquik_tweets(tweets)
 
 
 # ============================================================
@@ -654,7 +783,7 @@ async def get_trends(category: str = 'trending', count: int = 20) -> str:
             name = getattr(t, 'name', str(t))
             volume = getattr(t, 'tweets_count', None) or getattr(t, 'tweet_volume', None)
             domain = getattr(t, 'domain_context', '')
-            extra = f" — {volume} tweets" if volume else ""
+            extra = f" - {volume} tweets" if volume else ""
             if domain:
                 extra += f" ({domain})"
             lines.append(f"{i}. **{name}**{extra}")
@@ -801,7 +930,7 @@ async def get_my_lists() -> str:
             visibility = "🔒 private" if getattr(lst, 'is_private', False) else "🌐 public"
             lines.append(
                 f"- **{getattr(lst, 'name', '?')}** (`{getattr(lst, 'id', '?')}`)"
-                f" — {visibility} — {getattr(lst, 'member_count', 0)} members"
+                f" - {visibility} - {getattr(lst, 'member_count', 0)} members"
             )
             if getattr(lst, 'description', None):
                 lines.append(f"  > {lst.description}")
@@ -883,7 +1012,7 @@ async def get_notifications(notification_type: str = 'All', count: int = 20) -> 
     try:
         client = await get_twitter_client()
         # The high-level notification helper expects response['globalObjects'],
-        # which X removed in 2026 — surfaces as 'NoneType' has no attribute 'get'.
+        # which X removed in 2026 - surfaces as 'NoneType' has no attribute 'get'.
         # Bypass: call v11 endpoint directly and pull notification text from
         # globalObjects if present, otherwise scan the timeline entries.
         ntype = (notification_type or 'All').capitalize()
@@ -1050,7 +1179,7 @@ async def get_full_thread(tweet_id: str) -> str:
 
         result = [f"## Full thread (root: @{root.user.screen_name})", ""]
         for i, t in enumerate(chain + author_followups, 1):
-            result.append(f"### {i}. @{t.user.screen_name} — `{t.id}`")
+            result.append(f"### {i}. @{t.user.screen_name} - `{t.id}`")
             result.append(t.full_text or t.text)
             result.append(f"❤️ {t.favorite_count}  🔁 {t.retweet_count}  💬 {t.reply_count}")
             result.append("---")
