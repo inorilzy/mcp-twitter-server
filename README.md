@@ -7,6 +7,14 @@ media downloads.
 The server uses [xkit-py](https://github.com/inorilzy/xkit-py), a maintained
 cookie-based Twitter/X web client that does not require the paid official API.
 
+## What it is for
+
+- Let MCP-compatible agents search, read, and operate Twitter/X through local credentials.
+- Keep Twitter/X cookies on the user's machine instead of sending them to a hosted service.
+- Expose a broad tool surface while delegating low-level Twitter/X web API maintenance to `xkit-py`.
+
+It is not a password-login bot, hosted API proxy, or guarantee against Twitter/X rate limits and response changes.
+
 ## Installation
 
 ```json
@@ -20,9 +28,7 @@ cookie-based Twitter/X web client that does not require the paid official API.
         "mcp-twitter-server"
       ],
       "env": {
-        "TWITTER_USERNAME": "@example",
-        "TWITTER_EMAIL": "me@example.com",
-        "TWITTER_PASSWORD": "secret"
+        "TWITTER_COOKIES_PATH": "/absolute/path/to/x-cookies.json"
       }
     }
   }
@@ -33,12 +39,30 @@ Optional:
 
 ```json
 {
-  "USER_AGENT": "Mozilla/5.0 ..."
+  "USER_AGENT": "Mozilla/5.0 ...",
+  "TWITTER_COOKIES_JSON": "{\"cookies\":[...]}"
 }
 ```
 
-Cookies are stored at `~/.mcp-twitter-server/cookies.json` after the first
-successful login.
+The server does not perform password login. Log in to `x.com` in a browser,
+export cookies, and provide them through `TWITTER_COOKIES_PATH` or
+`TWITTER_COOKIES_JSON`. The cookies must include `auth_token` and `ct0`.
+
+By default, the server reads:
+
+```text
+~/.mcp-twitter-server/cookies.json
+```
+
+## Configuration
+
+| Name | Required | Description |
+| --- | --- | --- |
+| `TWITTER_COOKIES_PATH` | Recommended | Absolute path to exported Twitter/X cookies JSON. |
+| `TWITTER_COOKIES_JSON` | Optional | Inline exported cookie JSON. Useful for temporary local runs. |
+| `USER_AGENT` | Optional | Browser-like user agent override. |
+
+Cookies must include `auth_token` and `ct0`.
 
 ## Tools
 
@@ -124,16 +148,45 @@ pip install -e .
 mcp-twitter-server
 ```
 
-Required environment variables:
+Required cookie configuration:
 
 ```powershell
-$env:TWITTER_USERNAME='@example'
-$env:TWITTER_EMAIL='me@example.com'
-$env:TWITTER_PASSWORD='secret'
+$env:TWITTER_COOKIES_PATH='C:\path\to\x-cookies.json'
 ```
+
+Alternatively:
+
+```powershell
+$env:TWITTER_COOKIES_JSON='<exported-cookie-json>'
+```
+
+## Security Notes
+
+- Cookies are equivalent to account credentials. Store them outside the repository.
+- Do not paste cookie JSON into public issues, logs, or screenshots.
+- Prefer `TWITTER_COOKIES_PATH` over inline JSON for long-running setups.
+- Write tools can publish, delete, like, follow, block, and send DMs. Give agent access only when you intend to allow those actions.
+
+## Troubleshooting
+
+### The server starts but tools fail authentication
+
+Re-export cookies after logging in to `x.com`. Make sure the exported cookies include both `auth_token` and `ct0`.
+
+### Search or timeline tools suddenly fail
+
+Twitter/X frequently changes private web API shapes and rate limits. Update this server and `xkit-py`, then retry with a fresh cookie export.
+
+### My MCP client cannot find the command
+
+Check that `uvx` is installed and available in the same environment used by the MCP client. For local development, install with `pip install -e .` and use `mcp-twitter-server`.
 
 ## Notes
 
 Twitter/X frequently changes private web API response shapes. This server keeps
 MCP-facing behavior defensive and delegates low-level protocol maintenance to
 `xkit-py`.
+
+## License
+
+[MIT](LICENSE)
