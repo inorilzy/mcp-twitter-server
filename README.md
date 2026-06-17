@@ -40,7 +40,8 @@ Optional:
 ```json
 {
   "USER_AGENT": "Mozilla/5.0 ...",
-  "TWITTER_COOKIES_JSON": "{\"cookies\":[...]}"
+  "TWITTER_COOKIES_JSON": "{\"cookies\":[...]}",
+  "XQUIK_API_KEY": "optional, routes search_twitter through Xquik"
 }
 ```
 
@@ -61,6 +62,7 @@ By default, the server reads:
 | `TWITTER_COOKIES_PATH` | Recommended | Absolute path to exported Twitter/X cookies JSON. |
 | `TWITTER_COOKIES_JSON` | Optional | Inline exported cookie JSON. Useful for temporary local runs. |
 | `USER_AGENT` | Optional | Browser-like user agent override. |
+| `XQUIK_API_KEY` | Optional | Routes `search_twitter` through Xquik when configured. |
 
 Cookies must include `auth_token` and `ct0`.
 
@@ -68,7 +70,7 @@ Cookies must include `auth_token` and `ct0`.
 
 ### Read
 
-- `search_twitter` - search posts by query, sorted by Top or Latest
+- `search_twitter` - search posts by query, sorted by Top or Latest. Uses Xquik when `XQUIK_API_KEY` is configured
 - `get_user_tweets` - fetch posts from a user timeline
 - `get_user_mentions` - find posts mentioning a user
 - `get_timeline` - read the For You timeline
